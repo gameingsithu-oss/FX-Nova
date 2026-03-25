@@ -13,7 +13,7 @@ st.title("🚀 FX Nova - Smart Trading Terminal")
 st.sidebar.header("Market Selection")
 symbol = st.sidebar.text_input("Enter Symbol (e.g., BTC-USD, DOGE-USD):", "DOGE-USD").upper()
 
-# Advanced Session State
+# session_state එකේ දත්ත ආරක්ෂා කර ගැනීම
 if 'balance' not in st.session_state:
     st.session_state.balance = 10000.0
 if 'inventory' not in st.session_state:
@@ -24,17 +24,16 @@ if 'history' not in st.session_state:
 try:
     data = yf.download(symbol, period="1d", interval="1m")
     if not data.empty:
-        # Fixed RSI Calculation
+        # RSI Calculation
         delta = data['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
         rsi_series = 100 - (100 / (1 + rs))
         current_rsi = float(rsi_series.iloc[-1])
-
         latest_price = float(data['Close'].iloc[-1])
         
-        # Portfolio Summary
+        # --- 1. Top Dashboard ---
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Available Cash", f"${st.session_state.balance:,.2f}")
         
@@ -43,12 +42,11 @@ try:
         
         col2.metric(f"{symbol} Owned", f"{qty_owned}")
         
-        # Profit/Loss Calculation
         pl = (qty_owned * latest_price) - (qty_owned * avg_price)
         col3.metric("Profit / Loss", f"${pl:,.2f}", delta=f"{pl:,.2f}")
         col4.metric("Market Price", f"${latest_price:,.2f}")
 
-        # RSI Signal Alert
+        # --- 2. Market Signal ---
         st.subheader("💡 Market Signal")
         if current_rsi < 30:
             st.success(f"🔥 BUY SIGNAL: {symbol} is Oversold (RSI: {current_rsi:.2f}). Good time to Buy!")
@@ -57,17 +55,16 @@ try:
         else:
             st.info(f"⚖️ NEUTRAL: Market is stable (RSI: {current_rsi:.2f}).")
 
-        # Chart
+        # --- 3. Chart ---
         fig = go.Figure(data=[go.Candlestick(x=data.index,
                         open=data['Open'], high=data['High'],
                         low=data['Low'], close=data['Close'])])
         fig.update_layout(template="plotly_dark", xaxis_rangeslider_visible=False, height=400)
         st.plotly_chart(fig, use_container_width=True)
 
-        # Trading Panel
+        # --- 4. Trading Panel ---
         st.subheader("⚡ Quick Trade")
         c1, c2 = st.columns(2)
-        
         with c1:
             amount = st.number_input("Amount to Buy/Sell", min_value=0.01, step=1.0, value=100.0)
             if st.button(f"BUY {symbol}", use_container_width=True, type="primary"):
@@ -79,7 +76,7 @@ try:
                     new_qty = old_qty + amount
                     new_avg = ((old_avg * old_qty) + cost) / new_qty
                     st.session_state.inventory[symbol] = {'qty': new_qty, 'avg_price': new_avg}
-                    st.session_state.history.append([datetime.now(), "BUY", symbol, amount, latest_price])
+                    st.session_state.history.append({"Time": datetime.now().strftime("%H:%M:%S"), "Type": "BUY", "Symbol": symbol, "Qty": amount, "Price": latest_price})
                     st.rerun()
 
         with c2:
@@ -88,10 +85,29 @@ try:
                 if st.session_state.inventory.get(symbol, {}).get('qty', 0) >= amount:
                     st.session_state.balance += (amount * latest_price)
                     st.session_state.inventory[symbol]['qty'] -= amount
-                    st.session_state.history.append([datetime.now(), "SELL", symbol, amount, latest_price])
+                    st.session_state.history.append({"Time": datetime.now().strftime("%H:%M:%S"), "Type": "SELL", "Symbol": symbol, "Qty": amount, "Price": latest_price})
                     st.rerun()
-                else:
-                    st.error("Not enough assets to sell!")
+
+        # --- 5. History and Portfolio Tables ---
+        st.divider()
+        h1, h2 = st.columns(2)
+        with h1:
+            st.subheader("📜 Trade History")
+            if st.session_state.history:
+                st.table(pd.DataFrame(st.session_state.history).tail(5))
+            else:
+                st.write("No trades yet.")
+        
+        with h2:
+            st.subheader("💼 Your Assets")
+            portfolio_data = []
+            for sym, info in st.session_state.inventory.items():
+                if info['qty'] > 0:
+                    portfolio_data.append({"Symbol": sym, "Qty": info['qty'], "Avg Price": f"${info['avg_price']:.4f}"})
+            if portfolio_data:
+                st.table(pd.DataFrame(portfolio_data))
+            else:
+                st.write("Your wallet is empty.")
 
 except Exception as e:
     st.error(f"Connecting to Market Data... {e}")
