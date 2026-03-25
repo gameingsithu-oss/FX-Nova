@@ -24,13 +24,13 @@ if 'history' not in st.session_state:
 try:
     data = yf.download(symbol, period="1d", interval="1m")
     if not data.empty:
-        # RSI Calculation
+        # Fixed RSI Calculation
         delta = data['Close'].diff()
         gain = (delta.where(delta > 0, 0)).rolling(window=14).mean()
         loss = (-delta.where(delta < 0, 0)).rolling(window=14).mean()
         rs = gain / loss
-        rsi = 100 - (100 / (1 + rs))
-        current_rsi = rsi.iloc[-1]
+        rsi_series = 100 - (100 / (1 + rs))
+        current_rsi = float(rsi_series.iloc[-1])
 
         latest_price = float(data['Close'].iloc[-1])
         
@@ -90,6 +90,8 @@ try:
                     st.session_state.inventory[symbol]['qty'] -= amount
                     st.session_state.history.append([datetime.now(), "SELL", symbol, amount, latest_price])
                     st.rerun()
+                else:
+                    st.error("Not enough assets to sell!")
 
 except Exception as e:
     st.error(f"Connecting to Market Data... {e}")
